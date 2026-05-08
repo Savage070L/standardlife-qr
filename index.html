@@ -894,9 +894,7 @@ window.addEventListener("error", (e) => {
     const orgLong = d.lang === "kz"
       ? `«Standard Life» өмірді сақтандыру компаниясы» АҚ`
       : `АО Компания по страхованию жизни "Standard Life"`;
-    const labels = d.lang === "kz"
-      ? { addr: "Мекенжай", phone: "Телефон", email: "Пошта", web: "Веб-сайт" }
-      : { addr: "Адрес", phone: "Телефон", email: "Почта", web: "Веб-сайт" };
+    const labels = { addr: "Адрес", phone: "Телефон", email: "Почта", web: "Веб-сайт" };
     const phoneNoteLines = d.phones.map(p => `${labels.phone}: ${buildDisplayPhone(p.num, p.ext)}`);
     const noteLines = [
       d.fullName,
