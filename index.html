@@ -548,16 +548,10 @@ window.addEventListener("error", (e) => {
       .replace(/;/g, "\\;");
   }
 
-  function buildPhoneValue(num, ext, isFirst) {
-    if (isFirst) {
-      const trimmed = num.trim();
-      const cleanExt = (ext || "").replace(/\D/g, "");
-      return cleanExt ? trimmed + "," + cleanExt : trimmed;
-    }
-    const cleaned = num.replace(/[^\d+]/g, "");
-    if (!ext) return cleaned;
-    const cleanExt = ext.replace(/\D/g, "");
-    return cleanExt ? cleaned + ",," + cleanExt : cleaned;
+  function buildPhoneValue(num, ext) {
+    const trimmed = num.trim();
+    const cleanExt = (ext || "").replace(/\D/g, "");
+    return cleanExt ? trimmed + "," + cleanExt : trimmed;
   }
 
   function buildDisplayPhone(num, ext) {
@@ -586,7 +580,7 @@ window.addEventListener("error", (e) => {
     lines.push(`ORG:${esc(orgShort)}`);
 
     data.phones.forEach((p, i) => {
-      const value = buildPhoneValue(p.num, p.ext, i === 0);
+      const value = buildPhoneValue(p.num, p.ext);
       lines.push(`TEL;TYPE=${p.type},VOICE:${value}`);
     });
 
@@ -877,7 +871,7 @@ window.addEventListener("error", (e) => {
     lines.push(`ORG:${esc(orgShort)}`);
 
     d.phones.forEach((p, i) => {
-      const value = buildPhoneValue(p.num, p.ext, i === 0);
+      const value = buildPhoneValue(p.num, p.ext);
       lines.push(`TEL;TYPE=${p.type},VOICE:${value}`);
     });
 
