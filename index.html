@@ -358,7 +358,7 @@
 
       <div class="field">
         <label>Сайт</label>
-        <div class="fixed-field">https://standardlife.kz/</div>
+        <div class="fixed-field">standardlife.kz</div>
       </div>
 
       <div class="field">
@@ -408,6 +408,7 @@
     <div id="bulkStatus" class="bulk-status"></div>
     <div class="actions" id="bulkActionsRow" style="display:none; margin-top: 12px;">
       <button type="button" id="bulkDownloadAll" class="btn">Скачать все QR в архиве (ZIP)</button>
+      <button type="button" id="bulkDownloadXlsx" class="btn secondary">Скачать таблицу с QR (XLSX)</button>
     </div>
     <div id="bulkResults" class="bulk-grid"></div>
   </div>
@@ -454,7 +455,7 @@ window.addEventListener("error", (e) => {
   box.classList.add("show");
 });
 (function () {
-  const SITE = "https://standardlife.kz/";
+  const SITE = "standardlife.kz";
   const PHONE_TYPES = [
     { value: "CELL", label: "Мобильный" },
     { value: "WORK", label: "Рабочий"   },
@@ -691,10 +692,10 @@ window.addEventListener("error", (e) => {
       throw new Error("Слишком много данных для QR. Сократите поля. Подробности: " + (lastErr && lastErr.message));
     }
     const moduleCount = qr.getModuleCount();
-    const margin = 2;
+    const margin = 4;
     const totalModules = moduleCount + margin * 2;
-    const size = 512;
-    const cell = Math.max(2, Math.floor(size / totalModules));
+    const targetSize = 1600;
+    const cell = Math.max(8, Math.floor(targetSize / totalModules));
     const canvasSize = cell * totalModules;
     const canvas = document.createElement("canvas");
     canvas.width = canvasSize;
@@ -984,7 +985,7 @@ window.addEventListener("error", (e) => {
           const vcard = buildBulkVCard(data);
           const canvas = drawQR(vcard);
           const fileName = `qr-${slugify(ruName)}-ru.png`;
-          artifact.ru = { canvas, vcard, fileName };
+          artifact.ru = { canvas, vcard, fileName, data };
           pair.appendChild(makeThumb("RU", canvas, fileName));
           qrCount++;
         } catch (err) {
@@ -1010,7 +1011,7 @@ window.addEventListener("error", (e) => {
           const vcard = buildBulkVCard(data);
           const canvas = drawQR(vcard);
           const fileName = `qr-${slugify(kzName)}-kz.png`;
-          artifact.kz = { canvas, vcard, fileName };
+          artifact.kz = { canvas, vcard, fileName, data };
           pair.appendChild(makeThumb("KZ", canvas, fileName));
           qrCount++;
         } catch (err) {
@@ -1069,6 +1070,187 @@ window.addEventListener("error", (e) => {
     wrap.innerHTML = `<div class="lang" style="color:var(--danger)">${lang} — ошибка</div><div style="font-size:11px;color:var(--danger);text-align:center">${msg}</div>`;
     return wrap;
   }
+
+  function xmlEscape(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function buildContactCellText(data) {
+    const fullAddr = [data.city, data.street, data.building, data.office]
+      .map(s => (s || "").trim())
+      .filter(Boolean)
+      .join(", ");
+    const phoneLines = data.phones.map(p => buildDisplayPhone(p.num, p.ext));
+    return [
+      data.fullName,
+      data.position,
+      data.region,
+      fullAddr,
+      ...phoneLines,
+      data.email,
+      SITE
+    ].map(s => (s || "").trim()).filter(Boolean).join("\n");
+  }
+
+  function canvasToPngBase64(canvas) {
+    return canvas.toDataURL("image/png").split(",")[1];
+  }
+
+  async function buildXlsxWithQR(artifacts) {
+    const valid = artifacts.filter(a => a.ru || a.kz);
+    if (!valid.length) throw new Error("нет данных для экспорта");
+
+    const QR_PX = 240;
+    const PAD_PX = 10;
+    const QR_EMU = QR_PX * 9525;
+    const PAD_EMU = PAD_PX * 9525;
+    const ROW_PT = 200;
+    const COL_TEXT_W = 50;
+    const COL_QR_W = 36;
+
+    const zip = new JSZip();
+
+    zip.file("[Content_Types].xml",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Default Extension="png" ContentType="image/png"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+</Types>`);
+
+    zip.file("_rels/.rels",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`);
+
+    zip.file("xl/workbook.xml",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="QR коды" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`);
+
+    zip.file("xl/_rels/workbook.xml.rels",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`);
+
+    zip.file("xl/styles.xml",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="12"/><name val="Calibri"/></font></fonts>
+<fills count="1"><fill><patternFill patternType="none"/></fill></fills>
+<borders count="1"><border/></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="3">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>
+<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`);
+
+    let rows = `<row r="1" ht="22" customHeight="1">` +
+      `<c r="A1" t="inlineStr" s="2"><is><t>Контакт (RU)</t></is></c>` +
+      `<c r="B1" t="inlineStr" s="2"><is><t>Контакт (KZ)</t></is></c>` +
+      `<c r="C1" t="inlineStr" s="2"><is><t>QR (RU)</t></is></c>` +
+      `<c r="D1" t="inlineStr" s="2"><is><t>QR (KZ)</t></is></c>` +
+      `</row>`;
+
+    let drawings = "";
+    let drawingRels = "";
+    let id = 1;
+
+    function addImage(canvas, col, label, rowIdx0) {
+      zip.file(`xl/media/image${id}.png`, canvasToPngBase64(canvas), { base64: true });
+      drawingRels += `<Relationship Id="rId${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${id}.png"/>`;
+      drawings += `<xdr:oneCellAnchor>` +
+        `<xdr:from><xdr:col>${col}</xdr:col><xdr:colOff>${PAD_EMU}</xdr:colOff><xdr:row>${rowIdx0}</xdr:row><xdr:rowOff>${PAD_EMU}</xdr:rowOff></xdr:from>` +
+        `<xdr:ext cx="${QR_EMU}" cy="${QR_EMU}"/>` +
+        `<xdr:pic>` +
+          `<xdr:nvPicPr><xdr:cNvPr id="${id}" name="${label}"/><xdr:cNvPicPr/></xdr:nvPicPr>` +
+          `<xdr:blipFill><a:blip r:embed="rId${id}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>` +
+          `<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${QR_EMU}" cy="${QR_EMU}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>` +
+        `</xdr:pic>` +
+        `<xdr:clientData/>` +
+      `</xdr:oneCellAnchor>`;
+      id++;
+    }
+
+    for (let i = 0; i < valid.length; i++) {
+      const a = valid[i];
+      const rowNum = i + 2;
+      const rowIdx0 = rowNum - 1;
+      const ruText = a.ru ? buildContactCellText(a.ru.data) : "";
+      const kzText = a.kz ? buildContactCellText(a.kz.data) : "";
+      rows += `<row r="${rowNum}" ht="${ROW_PT}" customHeight="1">` +
+        `<c r="A${rowNum}" t="inlineStr" s="1"><is><t xml:space="preserve">${xmlEscape(ruText)}</t></is></c>` +
+        `<c r="B${rowNum}" t="inlineStr" s="1"><is><t xml:space="preserve">${xmlEscape(kzText)}</t></is></c>` +
+        `</row>`;
+      if (a.ru) addImage(a.ru.canvas, 2, `QR_RU_${rowNum}`, rowIdx0);
+      if (a.kz) addImage(a.kz.canvas, 3, `QR_KZ_${rowNum}`, rowIdx0);
+    }
+
+    zip.file("xl/worksheets/sheet1.xml",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<cols>
+<col min="1" max="1" width="${COL_TEXT_W}" customWidth="1"/>
+<col min="2" max="2" width="${COL_TEXT_W}" customWidth="1"/>
+<col min="3" max="3" width="${COL_QR_W}" customWidth="1"/>
+<col min="4" max="4" width="${COL_QR_W}" customWidth="1"/>
+</cols>
+<sheetData>${rows}</sheetData>
+<drawing r:id="rId1"/>
+</worksheet>`);
+
+    zip.file("xl/worksheets/_rels/sheet1.xml.rels",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+</Relationships>`);
+
+    zip.file("xl/drawings/drawing1.xml",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${drawings}</xdr:wsDr>`);
+
+    zip.file("xl/drawings/_rels/drawing1.xml.rels",
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${drawingRels}</Relationships>`);
+
+    return await zip.generateAsync({
+      type: "blob",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+  }
+
+  document.getElementById("bulkDownloadXlsx").addEventListener("click", async () => {
+    if (typeof JSZip === "undefined") { bulkSetStatus("JSZip не загружен.", true); return; }
+    if (!bulkArtifacts.length) return;
+    bulkSetStatus("Сборка XLSX-таблицы…");
+    try {
+      const blob = await buildXlsxWithQR(bulkArtifacts);
+      const link = document.createElement("a");
+      link.download = "qr-codes.xlsx";
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+      const count = bulkArtifacts.filter(a => a.ru || a.kz).length;
+      bulkSetStatus(`XLSX готов: ${count} строк.`);
+    } catch (err) {
+      bulkSetStatus("Не удалось собрать XLSX: " + err.message, true);
+    }
+  });
 
   bulkDownloadAll.addEventListener("click", async () => {
     if (typeof JSZip === "undefined") { bulkSetStatus("JSZip не загружен.", true); return; }
