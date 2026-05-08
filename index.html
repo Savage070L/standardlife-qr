@@ -853,8 +853,15 @@ window.addEventListener("error", (e) => {
       });
   }
 
+  function isMeaningful(s) {
+    if (!s) return false;
+    const t = String(s).trim();
+    if (!t) return false;
+    return !/^[—–\-]+$/.test(t);
+  }
+
   function joinAddress(parts) {
-    return parts.map(s => (s || "").trim()).filter(Boolean).join(", ");
+    return parts.map(s => (s || "").trim()).filter(isMeaningful).join(", ");
   }
 
   function buildBulkVCard(d) {
@@ -945,7 +952,8 @@ window.addEventListener("error", (e) => {
       const email = getCellText(sheet, `F${r}`);
       const phones = parsePhoneCell(getCellText(sheet, `G${r}`));
       const region = getCellText(sheet, `D${r}`);
-      const filialKz = getCellText(sheet, `Q${r}`) || region;
+      const positionKz = getCellText(sheet, `R${r}`) || getCellText(sheet, `H${r}`);
+      const filialKz = getCellText(sheet, `S${r}`) || getCellText(sheet, `I${r}`) || region;
 
       const cardEl = document.createElement("div");
       cardEl.className = "bulk-card";
@@ -971,10 +979,10 @@ window.addEventListener("error", (e) => {
             email,
             phones,
             region: region,
-            city: getCellText(sheet, `H${r}`),
-            street: getCellText(sheet, `I${r}`),
-            building: getCellText(sheet, `J${r}`),
-            office: getCellText(sheet, `K${r}`)
+            city: getCellText(sheet, `J${r}`),
+            street: getCellText(sheet, `K${r}`),
+            building: getCellText(sheet, `L${r}`),
+            office: getCellText(sheet, `M${r}`)
           };
           const vcard = buildBulkVCard(data);
           const canvas = drawQR(vcard);
@@ -993,14 +1001,14 @@ window.addEventListener("error", (e) => {
           const data = {
             lang: "kz",
             fullName: kzName,
-            position: getCellText(sheet, `P${r}`),
+            position: positionKz,
             email,
             phones,
             region: filialKz,
-            city: getCellText(sheet, `L${r}`),
-            street: getCellText(sheet, `M${r}`),
-            building: getCellText(sheet, `N${r}`),
-            office: getCellText(sheet, `O${r}`)
+            city: getCellText(sheet, `N${r}`),
+            street: getCellText(sheet, `O${r}`),
+            building: getCellText(sheet, `P${r}`),
+            office: getCellText(sheet, `Q${r}`)
           };
           const vcard = buildBulkVCard(data);
           const canvas = drawQR(vcard);
@@ -1074,10 +1082,7 @@ window.addEventListener("error", (e) => {
   }
 
   function buildContactCellText(data) {
-    const fullAddr = [data.city, data.street, data.building, data.office]
-      .map(s => (s || "").trim())
-      .filter(Boolean)
-      .join(", ");
+    const fullAddr = joinAddress([data.city, data.street, data.building, data.office]);
     const phoneLines = data.phones.map(p => buildDisplayPhone(p.num, p.ext));
     return [
       data.fullName,
@@ -1087,7 +1092,7 @@ window.addEventListener("error", (e) => {
       ...phoneLines,
       data.email,
       SITE
-    ].map(s => (s || "").trim()).filter(Boolean).join("\n");
+    ].map(s => (s || "").trim()).filter(isMeaningful).join("\n");
   }
 
   function canvasToPngBase64(canvas) {
